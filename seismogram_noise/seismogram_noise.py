@@ -12,6 +12,57 @@
 import numpy as np
 from scipy.fftpack import fft, ifft, fftfreq
 import sys
+import os
+from obspy.signal.spectral_estimation import get_nlnm, get_nhnm
+
+def external_models():
+    data_path = os.path.join(os.path.dirname(__file__),
+                                    'data')
+    fnams = dict()
+    fnams['Tcompact'] = os.path.join(data_path, 
+                                     'noise_Trillium_compact.txt')
+    fnams['STS2'] = os.path.join(data_path, 
+                                 'noise_STS2.txt')
+    fnams['external'] = None
+    fnams['NHNM'] = 'routine'
+    fnams['NLNM'] = 'routine'
+
+    return fnams
+
+def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
+ 
+    fnams = external_models()
+    if fnams[model]:
+        if model == 'NHNM':
+            p, power = get_nhnm()
+            f_in = 1./p 
+            power_in = 10**(power/10)
+
+        elif model == 'NLNM':
+            p, power = get_nlnm()
+            f_in = 1./p 
+            power_in = 10**(power/10)
+
+        else:
+            spec = np.loadtxt(fnams[model])
+            f_in = spec[:,0]
+            power_in = spec[:,1]
+
+    if (fnams[model] is None) and (f_in is None):
+        raise ValueError('Either specify a noise model or provide one')
+
+    for tr in st:
+        npts = tr.stats.npts
+        dt = tr.stats.delta
+
+        tr.data += create_noise(dt=tr.stats.delta, 
+                                npts=tr.stats.npts, 
+                                f_in=f_in, 
+                                power_in=power_in, 
+                                **kwargs)
+
+    return st
+
 
 def create_noise(dt, npts, f_in, power_in, 
                  interpolate='loglog'):
@@ -71,6 +122,10 @@ def create_noise(dt, npts, f_in, power_in,
         noise_amp_ipl = 10**np.interp(x=np.log10(abs(f)), 
                                       xp=np.log10(f_in), 
                                       fp=np.log10(energy_in))
+        noise_amp_ipl[f==0] = np.interp(x=0.0, 
+                                        xp=f_in, 
+                                        fp=energy_in)
+
     else: 
         raise ValueError('Unknown interpolation scheme %s' % interpolate)
     noise_fd *= np.abs(noise_amp_ipl)

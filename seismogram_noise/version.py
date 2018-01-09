@@ -6,7 +6,7 @@ from os.path import join as pjoin
 _version_major = 0
 _version_minor = 1
 _version_micro = ''  # use '' for first of series, number for 1 and above
-_version_extra = 'dev'
+_version_extra = 'dev0'
 # _version_extra = ''  # Uncomment this for full releases
 
 # Construct full version string from these.
@@ -49,7 +49,7 @@ DESCRIPTION = description
 LONG_DESCRIPTION = long_description
 URL = "http://github.com/sstaehler/seismogram_noise"
 DOWNLOAD_URL = ""
-LICENSE = "GPLv3"
+LICENSE = "MIT"
 AUTHOR = "Simon Staehler"
 AUTHOR_EMAIL = "mail@simonstaehler.com"
 PLATFORMS = "OS Independent"
