@@ -23,14 +23,16 @@ def external_models():
                                      'noise_Trillium_compact.txt')
     fnams['STS2'] = os.path.join(data_path, 
                                  'noise_STS2.txt')
+    fnams['CMG40T-OBS'] = os.path.join(data_path, 
+                                 'noise_CMG40T_OBS.txt')
     fnams['external'] = None
     fnams['NHNM'] = 'routine'
     fnams['NLNM'] = 'routine'
 
     return fnams
 
-def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
- 
+
+def get_spectrum(model):
     fnams = external_models()
     if fnams[model]:
         if model == 'NHNM':
@@ -46,10 +48,17 @@ def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
         else:
             spec = np.loadtxt(fnams[model])
             f_in = spec[:,0]
-            power_in = spec[:,1]
+            power_in = spec[:,1]**2
 
-    if (fnams[model] is None) and (f_in is None):
-        raise ValueError('Either specify a noise model or provide one')
+    return f_in, power_in
+
+
+def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
+    if model == 'external':
+        if f_in is None or power_in is None:
+            raise ValueError('Either specify a noise model or provide one')
+    else:
+        f_in, power_in = get_spectrum(model)    
 
     for tr in st:
         npts = tr.stats.npts
@@ -104,7 +113,7 @@ def create_noise(dt, npts, f_in, power_in,
     
     # Get frequency vector
     f = fftfreq(npts, d=dt) 
-
+    
     # calculate energy spectral density
     energy_in = np.sqrt(power_in)
     
