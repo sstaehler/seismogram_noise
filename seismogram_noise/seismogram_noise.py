@@ -55,6 +55,35 @@ def get_spectrum(model):
 
 
 def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
+    """
+    add noise series with given power spectrum to Stream object
+
+    Keywords:
+    :type  st: obspy.Stream
+    :param dt: ObsPy Stream object where noise should be added
+
+    :type  model: string
+    :param model: Noise model name. Allowed options are
+                  Tcompact:   Trillium compact
+                  STS2:       Streckeisen STS-2
+                  CMG40T-OBS: OBS version of Guralp CMG-40T
+                  NHNM:       Petersen New High Noise model
+                  NLNM:       Petersen New Low Noise model
+                  external:   Own noise model provided by variables
+                              f_in and power_in
+
+    :type  f_in: numpy.array
+    :param f_in: frequency array of input power spectrum
+
+    :type  power_in: numpy.array
+    :param power_in: input power spectrum
+
+    :type  interpolate: 'linear' or 'loglog'
+    :param interpolate: interpolation can either be done linear or
+                        in a log-log plot. The latter is usually
+                        preferred, since noise is assumed to be
+                        linear between points in log-log plot.
+    """
     if model == 'external':
         if f_in is None or power_in is None:
             raise ValueError('Either specify a noise model or provide one')
@@ -117,6 +146,9 @@ def create_noise(dt, npts, f_in, power_in,
 
     # Multiply with desired spectrum
     noise_amp_ipl = interpolation(f, f_in, energy_in, interpolate)
+    noise_amp_ipl[f == 0] = np.interp(x=0.0,
+                                      xp=f_in,
+                                      fp=energy_in)
 
     noise_fd *= np.abs(noise_amp_ipl)
     noise_td = ifft(noise_fd * np.sqrt(npts / 2 / dt))
@@ -138,10 +170,20 @@ def interpolation(f, f_in, energy_in, interpolate='loglog'):
         noise_amp_ipl = 10**np.interp(x=np.log10(abs(f)),
                                       xp=np.log10(f_in),
                                       fp=np.log10(energy_in))
-        noise_amp_ipl[f == 0] = np.interp(x=0.0,
-                                          xp=f_in,
-                                          fp=energy_in)
     else:
         raise ValueError('Unknown interpolation scheme %s' % interpolate)
 
     return noise_amp_ipl
+
+
+def get_noise_power(freq, model='external', interpolate='loglog',
+                    f_in=None, power_in=None):
+    if model == 'external':
+        if f_in is None or power_in is None:
+            raise ValueError('Either specify a noise model or provide one')
+    else:
+        f_in, power_in = get_spectrum(model)
+
+    energy_in = np.sqrt(power_in)
+
+    return interpolation(freq, f_in, energy_in, interpolate)
