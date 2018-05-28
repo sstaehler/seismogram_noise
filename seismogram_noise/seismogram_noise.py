@@ -54,13 +54,14 @@ def get_spectrum(model):
     return f_in, power_in
 
 
-def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
+def add_noise(st, model='external', kind='displacement',
+              f_in=None, power_in=None, **kwargs):
     """
     add noise series with given power spectrum to Stream object
 
     Keywords:
     :type  st: obspy.Stream
-    :param dt: ObsPy Stream object where noise should be added
+    :param st: ObsPy Stream object where noise should be added
 
     :type  model: string
     :param model: Noise model name. Allowed options are
@@ -71,6 +72,10 @@ def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
                   NLNM:       Petersen New Low Noise model
                   external:   Own noise model provided by variables
                               f_in and power_in
+
+    :type  kind: str, optional
+    :param kind: The desired units of the seismogram:
+        ``"displacement"``, ``"velocity"``, or ``"acceleration"``.
 
     :type  f_in: numpy.array
     :param f_in: frequency array of input power spectrum
@@ -89,6 +94,11 @@ def add_noise(st, model='external', f_in=None, power_in=None, **kwargs):
             raise ValueError('Either specify a noise model or provide one')
     else:
         f_in, power_in = get_spectrum(model)
+
+    if kind == 'displacement':
+        power_in /= f_in**2
+    elif kind == 'velocity':
+        power_in /= f_in
 
     for tr in st:
         tr.data += create_noise(dt=tr.stats.delta,
