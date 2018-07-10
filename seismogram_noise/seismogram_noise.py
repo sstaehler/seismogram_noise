@@ -9,53 +9,44 @@
 #   License:   MIT License
 # -------------------------------------------------------------------
 
+import os
+import sys
 import numpy as np
 from scipy.fftpack import fft, ifft, fftfreq
-import sys
-import os
-from obspy.signal.spectral_estimation import get_nlnm, get_nhnm
+
+DATA_PATH = os.path.join(os.path.dirname(__file__),
+                         'data')
 
 
-def external_models():
-    data_path = os.path.join(os.path.dirname(__file__),
-                             'data')
-    fnams = dict()
-    fnams['Tcompact'] = os.path.join(data_path,
-                                     'noise_Trillium_compact.txt')
-    fnams['STS2'] = os.path.join(data_path,
-                                 'noise_STS2.txt')
-    fnams['CMG40T-OBS'] = os.path.join(data_path,
-                                       'noise_CMG40T_OBS.txt')
-    fnams['external'] = None
-    fnams['NHNM'] = 'routine'
-    fnams['NLNM'] = 'routine'
+def show_models():
+    models = []
+    dir_content = os.scandir(path=DATA_PATH)
+    for entry in dir_content:
+        if entry.is_dir():
+            models.append(entry.name)
+    models.sort()
+    for model in models:
+        with open(os.path.join(DATA_PATH, model, 'README')) as fid:
+            text = fid.readlines()
+        print('\n--------------------------------------------------------------')
+        print('%s:' % model)
+        for line in text:
+            print('%s' % line[0:-1])
+        print('--------------------------------------------------------------')
 
-    return fnams
 
-
-def get_spectrum(model):
-    fnams = external_models()
-    if fnams[model]:
-        if model == 'NHNM':
-            p, power = get_nhnm()
-            f_in = 1./p
-            power_in = 10**(power/10)
-
-        elif model == 'NLNM':
-            p, power = get_nlnm()
-            f_in = 1./p
-            power_in = 10**(power/10)
-
-        else:
-            spec = np.loadtxt(fnams[model])
-            f_in = spec[:, 0]
-            power_in = spec[:, 1]**2
+def get_spectrum(model, comp):
+    fnam = os.path.join(DATA_PATH, model,
+                        'noise_%s_%s.txt' % (model, comp))
+    spec = np.loadtxt(fnam)
+    f_in = spec[:, 0]
+    power_in = spec[:, 1] ** 2
 
     return f_in, power_in
 
 
 def add_noise(st, model='external', kind='displacement',
-              f_in=None, power_in=None, **kwargs):
+              f_in=None, power_in=None, comp=None, **kwargs):
     """
     add noise series with given power spectrum to Stream object
 
@@ -64,14 +55,8 @@ def add_noise(st, model='external', kind='displacement',
     :param st: ObsPy Stream object where noise should be added
 
     :type  model: string
-    :param model: Noise model name. Allowed options are
-                  Tcompact:   Trillium compact
-                  STS2:       Streckeisen STS-2
-                  CMG40T-OBS: OBS version of Guralp CMG-40T
-                  NHNM:       Petersen New High Noise model
-                  NLNM:       Petersen New Low Noise model
-                  external:   Own noise model provided by variables
-                              f_in and power_in
+    :param model: Noise model name. Get allowed options from
+        seismogram_noise.show_models()
 
     :type  kind: str, optional
     :param kind: The desired units of the seismogram:
@@ -83,6 +68,10 @@ def add_noise(st, model='external', kind='displacement',
     :type  power_in: numpy.array
     :param power_in: input power spectrum
 
+    :type  comp: string
+    :param comp: 'vert' for vertical noise, 'hor' for horizontal noise
+        default: determine automatically based on channel code
+
     :type  interpolate: 'linear' or 'loglog'
     :param interpolate: interpolation can either be done linear or
                         in a log-log plot. The latter is usually
@@ -92,21 +81,31 @@ def add_noise(st, model='external', kind='displacement',
     if model == 'external':
         if f_in is None or power_in is None:
             raise ValueError('Either specify a noise model or provide one')
-    else:
-        f_in, power_in = get_spectrum(model)
-
-    if kind == 'displacement':
-        power_in /= f_in**2
-    elif kind == 'velocity':
-        power_in /= f_in
 
     for tr in st:
+        if not comp:
+            if tr.stats.channel[-1] == 'Z':
+                comp_trace = 'vert'
+            elif tr.stats.channel[-1] in ['N', 'E', '1', '2', 'R', 'T']:
+                comp_trace = 'hor'
+            else:
+                print('Cannot determine whether %s is a horizontal or vertical channel' %
+                      tr.stats.channel)
+                raise ValueError('Please specify!')
+        else:
+            comp_trace = comp
+        f_in, power_in = get_spectrum(model, comp_trace)
+
+        if kind == 'displacement':
+            power_in /= f_in ** 2
+        elif kind == 'velocity':
+            power_in /= f_in
+
         tr.data += create_noise(dt=tr.stats.delta,
                                 npts=tr.stats.npts,
                                 f_in=f_in,
                                 power_in=power_in,
                                 **kwargs)
-
     return st
 
 
@@ -155,7 +154,9 @@ def create_noise(dt, npts, f_in, power_in,
     energy_in = np.sqrt(power_in)
 
     # Multiply with desired spectrum
-    noise_amp_ipl = interpolation(f, f_in, energy_in, interpolate)
+    noise_amp_ipl = np.zeros_like(f)
+    noise_amp_ipl[abs(f) > 0] = interpolation(f[abs(f) > 0], f_in, energy_in,
+                                              interpolate)
     noise_amp_ipl[f == 0] = np.interp(x=0.0,
                                       xp=f_in,
                                       fp=energy_in)
@@ -177,9 +178,9 @@ def interpolation(f, f_in, energy_in, interpolate='loglog'):
 
         # Since the self-noise is usually defined as linear in
         # log-log plots, we need to interpolate the logarithms
-        noise_amp_ipl = 10**np.interp(x=np.log10(abs(f)),
-                                      xp=np.log10(f_in),
-                                      fp=np.log10(energy_in))
+        noise_amp_ipl = 10 ** np.interp(x=np.log10(abs(f)),
+                                        xp=np.log10(f_in),
+                                        fp=np.log10(energy_in))
     else:
         raise ValueError('Unknown interpolation scheme %s' % interpolate)
 
